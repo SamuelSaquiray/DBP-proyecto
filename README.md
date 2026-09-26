@@ -1,0 +1,225 @@
+# Recaud.IA
+
+## Sistema de Operación y Negocio con IA para Facturación y Cobranzas en Telecomunicaciones
+
+**Curso:** CS 2031 Desarrollo Basado en Plataforma (DBP)  
+**Backend:** Spring Boot 3.2.5 + Java 21  
+**Base de datos:** PostgreSQL  
+**Despliegue:** AWS Elastic Beanstalk + Amazon RDS + AWS Secrets Manager + S3
+
+## 1. Descripción
+
+Recaud.IA es una plataforma orientada a empresas de telecomunicaciones que centraliza el ciclo de facturación y cobranzas. El backend permite aislar la información de cada empresa mediante una arquitectura multi-tenant, administrar cuentas y servicios, registrar facturas y pagos, detectar inconsistencias, revisar alertas, consultar indicadores y ejecutar procesos de automatización de manera asíncrona.
+
+El diseño sigue una arquitectura por capas: `Controller -> Service -> Repository`, con DTOs para separar los contratos de la API de las entidades JPA. Las operaciones sensibles están protegidas con Spring Security y JWT.
+
+## 2. Funcionalidades implementadas
+
+- Provisionamiento de nuevas empresas con una base de datos tenant independiente.
+- Registro de usuarios internos con roles `ADMIN`, `FACTURACION`, `COBRANZAS` y `BI`.
+- Autenticación mediante JWT y refresh tokens.
+- Gestión de cuentas de clientes y estados de cuenta.
+- Gestión de servicios y servicios contratados.
+- Registro y consulta de facturas.
+- Registro de pagos parciales y actualización automática del estado de la factura.
+- Notas de crédito.
+- Alertas de inconsistencias con aprobación, rechazo y trazabilidad de revisores.
+- Dashboard con facturación, cobranza, porcentaje cobrado, alertas, cuentas suspendidas y antigüedad de deuda.
+- Validación masiva de facturas en segundo plano.
+- Proyección de cobranza mediante simulación Monte Carlo asíncrona.
+- Conciliación automática del monto pagado y estado de las facturas.
+- Chatbot de cobranza conectado a un proveedor compatible con la API de chat de OpenAI.
+- Envío de mensajes individuales y masivos mediante WhatsApp Cloud API compatible.
+- Carga de archivos de hasta 50 MB a S3.
+- Exportación de facturas a CSV.
+- Auditoría de operaciones importantes.
+- Notificación HTML por correo después de crear una factura.
+- Documentación OpenAPI/Swagger y colección Postman.
+
+## 3. Modelo de datos
+
+Las entidades principales son `Empresa`, `Usuario`, `Cuenta`, `Servicio`, `ServicioContratado`, `Factura`, `Pago`, `Alerta`, `NotaDeCredito` y `AuditLog`. Una empresa posee usuarios y cuentas; las cuentas contratan servicios y reciben facturas; una factura puede tener pagos, notas de crédito y una alerta; las alertas pueden ser revisadas por varios usuarios.
+
+La arquitectura multi-tenant utiliza una base maestra para registrar los tenants y una base PostgreSQL independiente por empresa. El `TenantContext` y el `TenantRoutingDataSource` seleccionan la conexión correcta a partir del tenant autenticado. Las credenciales de RDS se obtienen desde AWS Secrets Manager.
+
+## 4. Seguridad
+
+Spring Security funciona en modo stateless. El login genera un access token y un refresh token. El `JwtAuthenticationFilter` valida el token del header `Authorization: Bearer ...`, verifica expiración y selecciona el tenant antes de consultar los datos del usuario. El JWT incluye `userId`, `empresaId`, `rol` y `tipo`.
+
+Las contraseñas se almacenan usando BCrypt. Los endpoints están separados por roles y las operaciones de plataforma requieren el rol `MASTER`. El secreto JWT se obtiene obligatoriamente desde `JWT_SECRET`; no existe un secreto por defecto en producción.
+
+El sistema incluye manejo global de excepciones mediante `@RestControllerAdvice`, con respuestas consistentes para validaciones, autenticación, autorización, recursos inexistentes, conflictos y errores internos.
+
+## 5. Eventos y asincronía
+
+Se utilizan eventos transaccionales después del commit para desacoplar operaciones de negocio. Actualmente existen eventos para creación de facturas, registro de pagos y cambio de estado de alertas. El correo de factura se ejecuta de manera asíncrona.
+
+`@EnableAsync` y `ThreadPoolTaskExecutor` permiten ejecutar tareas costosas sin bloquear las peticiones HTTP. La validación masiva de facturas, la simulación Monte Carlo, la conciliación y el envío masivo de WhatsApp utilizan procesamiento asíncrono. En los workers se restaura explícitamente el `TenantContext` para mantener el aislamiento multi-tenant.
+
+## 6. Integraciones
+
+### LLM
+
+El endpoint `/api/v1/chatbot/cobranza` construye un contexto con información real del tenant y, opcionalmente, de una cuenta específica. El contexto se envía al proveedor LLM configurado en `LLM_API_URL`. El backend exige `LLM_API_KEY` para utilizar el chatbot y solicita al modelo no inventar datos fuera del contexto.
+
+### WhatsApp
+
+`WhatsAppService` utiliza un endpoint configurado mediante `WHATSAPP_API_URL` y el token `WHATSAPP_TOKEN`. Se puede enviar un mensaje individual o iniciar una campaña asíncrona para cuentas en mora que tengan teléfono registrado.
+
+### S3
+
+`S3Service` almacena archivos bajo un prefijo por empresa (`empresa-{id}/...`) y sanitiza el nombre original del archivo. El endpoint de subida es `/api/v1/files/upload`.
+
+### Email
+
+El sistema usa `JavaMailSender` y una plantilla HTML ubicada en `src/main/resources/templates/invoice-notification.html`. El listener de creación de factura ejecuta el envío después del commit y de forma asíncrona.
+
+## 7. API principal
+
+Todos los endpoints nuevos usan `/api/v1`. También se conserva compatibilidad con las rutas `/api` existentes.
+
+### Autenticación
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/master/auth/login`
+
+### Administración
+
+- `POST/GET/PUT/DELETE /api/v1/usuarios`
+- `POST/GET/PUT/DELETE /api/v1/cuentas`
+- `POST/GET/PUT/DELETE /api/v1/servicios`
+- `POST/GET /api/v1/cuentas/{id}/servicios`
+
+### Facturación
+
+- `POST/GET /api/v1/facturas`
+- `GET /api/v1/facturas/cuenta/{id}`
+- `PATCH /api/v1/facturas/{id}/estado`
+- `POST /api/v1/pagos`
+- `POST /api/v1/notas-credito`
+
+### Alertas y BI
+
+- `GET /api/v1/alertas`
+- `GET /api/v1/alertas/pendientes`
+- `PATCH /api/v1/alertas/{id}`
+- `GET /api/v1/dashboard`
+- `GET /api/v1/reportes/facturas.csv`
+- `GET /api/v1/auditoria`
+- `GET /api/v1/auditoria/{entidad}/{id}`
+
+### Automatización e IA
+
+- `POST /api/v1/operaciones/validacion-facturas`
+- `GET /api/v1/operaciones/proyeccion-cobranza?escenarios=5000`
+- `POST /api/v1/conciliacion`
+- `POST /api/v1/chatbot/cobranza`
+- `POST /api/v1/whatsapp/mensaje`
+- `POST /api/v1/notificaciones/whatsapp/mora`
+- `POST /api/v1/files/upload`
+
+## 8. Variables de entorno
+
+### Requeridas para producción
+
+```text
+AWS_REGION=us-east-1
+RDS_MASTER_SECRET_NAME=recaudia/rds/master
+PROVISIONING_KEY_SECRET_NAME=recaudia/provisioning
+JWT_SECRET=<base64-secret-largo>
+```
+
+### Autenticación MASTER
+
+```text
+MASTER_ADMIN_NAME=Recaud.IA Master
+MASTER_ADMIN_EMAIL=<correo>
+MASTER_ADMIN_PASSWORD=<password-segura>
+```
+
+### Refresh token
+
+```text
+JWT_EXPIRATION_MS=86400000
+JWT_REFRESH_EXPIRATION_MS=604800000
+```
+
+### Correo
+
+```text
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=<correo>
+MAIL_PASSWORD=<app-password>
+MAIL_SMTP_AUTH=true
+MAIL_SMTP_STARTTLS=true
+```
+
+### IA
+
+```text
+LLM_API_URL=https://api.openai.com/v1/chat/completions
+LLM_API_KEY=<api-key>
+LLM_MODEL=gpt-4o-mini
+```
+
+### WhatsApp
+
+```text
+WHATSAPP_API_URL=<endpoint-completo-de-WhatsApp-Cloud-API>
+WHATSAPP_TOKEN=<token>
+```
+
+### AWS/S3 y CORS
+
+```text
+AWS_S3_BUCKET=<bucket>
+CORS_ALLOWED_ORIGINS=https://tu-frontend.example,http://localhost:5173
+```
+
+Nunca se deben subir `.env`, contraseñas, API keys o tokens al repositorio.
+
+## 9. Ejecución local
+
+Requisitos: Java 21, Maven 3.9+, PostgreSQL y credenciales AWS cuando se utilicen S3/Secrets Manager.
+
+```bash
+mvn clean test
+mvn spring-boot:run
+```
+
+La aplicación escucha en el puerto `5000` por defecto. La documentación OpenAPI está disponible en `/swagger-ui.html` y `/v3/api-docs`.
+
+## 10. AWS
+
+La infraestructura objetivo utiliza Elastic Beanstalk para ejecutar Spring Boot y RDS PostgreSQL para la persistencia. El Security Group de RDS permite PostgreSQL desde el Security Group de Elastic Beanstalk. Secrets Manager mantiene las credenciales de la base maestra y la clave de provisioning. S3 almacena archivos de las empresas.
+
+URL de despliegue utilizada durante el proyecto:
+`http://recaudia-api-env.eba-disas8yb.us-east-1.elasticbeanstalk.com`
+
+Antes de desplegar una nueva versión se deben verificar `JWT_SECRET`, secretos de RDS y, si se activan, SMTP, LLM, WhatsApp y S3. La aplicación no debe recibir secretos directamente desde el código fuente.
+
+## 11. Postman y pruebas
+
+La raíz del proyecto contiene `postman_collection.json` y `postman_environment.json`. La colección documenta provisioning, autenticación, refresh token, operaciones de negocio, seguridad y las nuevas operaciones de IA, reportes, auditoría, archivos y asincronía.
+
+El proyecto incluye una prueba automatizada de la proyección Monte Carlo. Antes de la entrega final se debe ejecutar `mvn test` en un entorno con Maven y Java 21 para verificar compilación, tests y dependencias.
+
+## 12. Git y gestión
+
+El repositorio debe mantener commits descriptivos, ramas por funcionalidad o corrección, `.gitignore` para archivos sensibles y, cuando corresponda, Pull Requests y GitHub Projects/Issues para evidenciar la organización del trabajo.
+
+## 13. Limitaciones de configuración
+
+Las integraciones externas no pueden funcionar sin sus credenciales reales. El backend está preparado para LLM, WhatsApp, S3 y SMTP, pero las variables de entorno determinan cuáles están activas. Esto permite desplegar el núcleo de facturación incluso cuando alguna integración externa todavía no se ha configurado.
+
+## 14. Licencia
+
+Agregar aquí la licencia elegida por el equipo antes de la entrega final.
+
+## 15. CI/CD y desarrollo local
+
+Se incluye `.github/workflows/ci.yml` para ejecutar automáticamente `mvn clean test` y el empaquetado con Java 21 en pushes y Pull Requests sobre `main` y `develop`. También se incluye `docker-compose.yml` con PostgreSQL 16 para facilitar el desarrollo local; las variables y bases tenant deben configurarse según el entorno local utilizado.
+#   D B P - p r o y e c t o  
+ 
