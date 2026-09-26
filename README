@@ -221,6 +221,8 @@ Agregar aquí la licencia elegida por el equipo antes de la entrega final.
 ## 15. CI/CD y desarrollo local
 
 Se incluye `.github/workflows/ci.yml` para ejecutar automáticamente `mvn clean test` y el empaquetado con Java 21 en pushes y Pull Requests sobre `main` y `develop`. También se incluye `docker-compose.yml` con PostgreSQL 16 para facilitar el desarrollo local; las variables y bases tenant deben configurarse según el entorno local utilizado.
-#   D B P - p r o y e c t o  
- #   D B P - p r o y e c t o  
+#   D B P - p r o y e c t o 
+ 
+ #   D B P - p r o y e c t o 
+ 
  
