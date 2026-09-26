@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: recaud-ia
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+
+app:
+  master-secret-name: ${RDS_MASTER_SECRET_NAME}
+  master:
+    bootstrap:
+      name: ${MASTER_ADMIN_NAME:Recaud.IA Master}
+      email: ${MASTER_ADMIN_EMAIL:}
+      password: ${MASTER_ADMIN_PASSWORD:}
+  provisioning:
+    # Nombre o ARN del secret creado/administrado por RDS para recaudia_master.
+    rds-secret-name: ${RDS_MASTER_SECRET_NAME}
+    # Secret que contiene la clave del endpoint de provisioning.
+    provisioning-key-secret-name: ${PROVISIONING_KEY_SECRET_NAME:recaudia/provisioning}
+    database-prefix: ${PROVISIONING_DATABASE_PREFIX:recaudia_tenant_}
+
+  # Hibernate necesita una BD tenant durante el arranque.
+  bootstrap-tenant-id: 1
+
+  # Solo se declara el nombre de la BD.
+  # Las credenciales se obtienen desde el secret administrado por RDS.
+  tenants:
+    {}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+
+server:
+  port: ${PORT:5000}
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+
+aws:
+  region: ${AWS_REGION:us-east-1}
+  s3:
+    bucket: ${AWS_S3_BUCKET:recaud-ia-bucket}
+
+llm:
+  api-url: ${LLM_API_URL:https://api.openai.com/v1/chat/completions}
+  api-key: ${LLM_API_KEY:}
+  model: ${LLM_MODEL:gpt-4o-mini}
+
+whatsapp:
+  api-url: ${WHATSAPP_API_URL:}
+  token: ${WHATSAPP_TOKEN:}
+
+logging:
+  level:
+    com.recaudia: DEBUG
+    org.springframework.security: INFO

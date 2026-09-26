@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: recaudia-postgres
+    environment:
+      POSTGRES_DB: recaudia_master
+      POSTGRES_USER: recaudia
+      POSTGRES_PASSWORD: recaudia_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - recaudia-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recaudia -d recaudia_master"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  recaudia-postgres-data:
